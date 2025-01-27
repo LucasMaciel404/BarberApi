@@ -3,10 +3,10 @@ using System.ComponentModel.DataAnnotations;
 
 namespace Barber.Models;
 
-public class Usuarios : Controller
+public class Usuarios 
 {
     [Key]
-    public string id {get; set;}
+    public int id {get; set;}
     public string nome { get; set; }
     public string foto { get; set; }
     public string numero { get; set; }

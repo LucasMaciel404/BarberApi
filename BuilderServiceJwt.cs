@@ -1,73 +1,97 @@
-﻿using Microsoft.AspNetCore.Authentication.JwtBearer;
+﻿using Barber.Models;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.EntityFrameworkCore.Metadata.Internal;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using Swashbuckle.AspNetCore.SwaggerGen;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 using System.Text;
 
-namespace Barber;
-
-public class BuilderServiceJwt
+namespace Barber.Jwt;
+public class TokenService
 {
-    private WebApplicationBuilder builder;
-    public BuilderServiceJwt(WebApplicationBuilder builder)
+    public static string GenerateToken(Usuarios user)
     {
-        this.builder = builder;
-    }
-    public void configJwtSwagger()
-    {
-        builder.Services.AddSwaggerGen(options =>
+        var key = Encoding.ASCII.GetBytes(Secret.Key);
+        var tokenHandler = new JwtSecurityTokenHandler();
+        var tokenDescriptor = new SecurityTokenDescriptor
         {
-            options.SwaggerDoc("v1", new OpenApiInfo
+            Subject = new ClaimsIdentity(new[]
             {
-                Title = "Minha API",
-                Version = "v1",
-                Description = "Documentação da API com suporte a autenticação JWT.",
-            });
+                new Claim(ClaimTypes.Name, user.nome),
+                new Claim(ClaimTypes.Role, user.role)
+            }),
+            Expires = DateTime.UtcNow.AddHours(1),
+            SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
+        };
+        var token = tokenHandler.CreateToken(tokenDescriptor);
+        var tokenString = tokenHandler.WriteToken(token);
+        Console.WriteLine($"Generated Token: {tokenString}"); // Log do token gerado
+        return tokenString;
+    }
 
-            // Configuração para autenticação JWT no Swagger
-            options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
-            {
-                Name = "Authorization",
-                Type = SecuritySchemeType.ApiKey,
-                Scheme = "Bearer",
-                BearerFormat = "JWT",
-                In = ParameterLocation.Header,
-                Description = "Insira o token JWT no formato: Bearer {seu-token}"
-            });
+    public static void ConfigureSwagguerJwtAthentication(SwaggerGenOptions c)
+    {
+        c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+        {
+            Name = "Authorization",
+            In = ParameterLocation.Header,
+            Type = SecuritySchemeType.ApiKey,
+            Scheme = "Bearer"
+        });
 
-            options.AddSecurityRequirement(new OpenApiSecurityRequirement
+        c.AddSecurityRequirement(new OpenApiSecurityRequirement()
+        {
             {
+                new OpenApiSecurityScheme
                 {
-                    new OpenApiSecurityScheme
-                    {
                     Reference = new OpenApiReference
                     {
                         Type = ReferenceType.SecurityScheme,
-                        Id = "Bearer"
-                    }
-                }, new string[] {}
-                }});
+                        Id = "Bearer",
+                    },
+                    Scheme = "oauth2",
+                    Name = "Bearer",
+                    In = ParameterLocation.Header,
+                },
+                new List<string>()
+            }
         });
     }
-    public void JWTServiceAlth()
-    {
-        var key = Encoding.UTF8.GetBytes(Secret.Key);
 
-        builder.Services.AddAuthentication(options =>
+    public static void ConfigureJWT(WebApplicationBuilder builder)
+    {
+        var key = Encoding.ASCII.GetBytes(Secret.Key);
+        builder.Services.AddAuthentication(x =>
         {
-            options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-            options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-        })
-        .AddJwtBearer(options =>
+            x.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+            x.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+        }).AddJwtBearer(x =>
         {
-            options.TokenValidationParameters = new TokenValidationParameters
+            x.RequireHttpsMetadata = false;
+            x.SaveToken = true;
+            x.TokenValidationParameters = new TokenValidationParameters
             {
-                ValidateIssuer = true,
-                ValidateAudience = true,
-                ValidateLifetime = true,
                 ValidateIssuerSigningKey = true,
-                ValidIssuer = "seu-issuer",
-                ValidAudience = "sua-audience",
-                IssuerSigningKey = new SymmetricSecurityKey(key)
+                IssuerSigningKey = new SymmetricSecurityKey(key),
+                ValidateIssuer = false,
+                ValidateAudience = false,
+                ValidateLifetime = true,
+                ClockSkew = TimeSpan.Zero
+            };
+            x.Events = new JwtBearerEvents
+            {
+                OnAuthenticationFailed = context =>
+                {
+                    Console.WriteLine($"Authentication failed: {context.Exception.Message}");
+                    return Task.CompletedTask;
+                },
+                OnTokenValidated = context =>
+                {
+                    Console.WriteLine("Token validated successfully");
+                    return Task.CompletedTask;
+                }
             };
         });
     }
